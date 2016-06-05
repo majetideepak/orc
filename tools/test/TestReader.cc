@@ -127,15 +127,15 @@ namespace orc {
       EXPECT_EQ(itr->second, val);
     }
     EXPECT_EQ(true, !reader->hasMetadataValue("foo"));
-    EXPECT_EQ(18446744073709551615UL, reader->getRowNumber());
+    EXPECT_EQ(18446744073709551615UL, reader->getRowReader()->getRowNumber());
 
     EXPECT_EQ(GetParam().typeString, reader->getType().toString());
   }
 
   TEST_P(MatchTest, Contents) {
     orc::ReaderOptions opts;
-    std::unique_ptr<Reader> reader =
-      createReader(readLocalFile(getFilename()), opts);
+    std::unique_ptr<RowReader> reader =
+      createReader(readLocalFile(getFilename()), opts)->getRowReader();
     unsigned long rowCount = 0;
     std::unique_ptr<ColumnVectorBatch> batch = reader->createRowBatch(1024);
     std::string line;
@@ -530,7 +530,7 @@ INSTANTIATE_TEST_CASE_P(TestReader1900, MatchTest,
     EXPECT_EQ(filename.str(), reader->getStreamName());
     EXPECT_THAT(reader->getMetadataKeys(), testing::IsEmpty());
     EXPECT_FALSE(reader->hasMetadataValue("foo"));
-    EXPECT_EQ(18446744073709551615UL, reader->getRowNumber());
+    EXPECT_EQ(18446744073709551615UL, reader->getRowReader()->getRowNumber());
 
     const Type& rootType = reader->getType();
     EXPECT_EQ(0, rootType.getColumnId());
@@ -559,14 +559,15 @@ INSTANTIATE_TEST_CASE_P(TestReader1900, MatchTest,
         << "fail on " << i;
     }
 
-    const std::vector<bool> selected = reader->getSelectedColumns();
+    std::unique_ptr<RowReader> rowreader = reader->getRowReader();
+    const std::vector<bool> selected = rowreader->getSelectedColumns();
     EXPECT_EQ(true, selected[0]) << "fail on " << 0;
     for (size_t i = 1; i < 10; ++i) {
       EXPECT_EQ(i%2==1?true:false, selected[i]) << "fail on " << i;
     }
 
     unsigned long rowCount = 0;
-    std::unique_ptr<ColumnVectorBatch> batch = reader->createRowBatch(1024);
+    std::unique_ptr<ColumnVectorBatch> batch = rowreader->createRowBatch(1024);
     StructVectorBatch* structBatch =
       dynamic_cast<StructVectorBatch*>(batch.get());
     ASSERT_TRUE(structBatch != nullptr);
@@ -574,15 +575,15 @@ INSTANTIATE_TEST_CASE_P(TestReader1900, MatchTest,
       (structBatch->fields[0]);
     ASSERT_TRUE(longVector != nullptr);
     int64_t* idCol = longVector->data.data();
-    while (reader->next(*batch)) {
-      EXPECT_EQ(rowCount, reader->getRowNumber());
+    while (rowreader->next(*batch)) {
+      EXPECT_EQ(rowCount, rowreader->getRowNumber());
       for(unsigned int i=0; i < batch->numElements; ++i) {
         EXPECT_EQ(rowCount + i + 1, idCol[i]) << "Bad id for " << i;
       }
       rowCount += batch->numElements;
     }
     EXPECT_EQ(1920800, rowCount);
-    EXPECT_EQ(1920800, reader->getRowNumber());
+    EXPECT_EQ(1920800, rowreader->getRowNumber());
   }
 
   TEST(Reader, stripeInformationTest) {
@@ -613,14 +614,14 @@ INSTANTIATE_TEST_CASE_P(TestReader1900, MatchTest,
     offsetOpts.range(80000, 130722);
     std::ostringstream filename;
     filename << exampleDirectory << "/demo-11-none.orc";
-    std::unique_ptr<Reader> fullReader =
-      createReader(readLocalFile(filename.str()), fullOpts);
-    std::unique_ptr<Reader> lastReader =
-      createReader(readLocalFile(filename.str()), lastOpts);
-    std::unique_ptr<Reader> oobReader =
-      createReader(readLocalFile(filename.str()), oobOpts);
-    std::unique_ptr<Reader> offsetReader =
-      createReader(readLocalFile(filename.str()), offsetOpts);
+    std::unique_ptr<RowReader> fullReader =
+      createReader(readLocalFile(filename.str()), fullOpts)->getRowReader();
+    std::unique_ptr<RowReader> lastReader =
+      createReader(readLocalFile(filename.str()), lastOpts)->getRowReader();
+    std::unique_ptr<RowReader> oobReader =
+      createReader(readLocalFile(filename.str()), oobOpts)->getRowReader();
+    std::unique_ptr<RowReader> offsetReader =
+      createReader(readLocalFile(filename.str()), offsetOpts)->getRowReader();
 
     std::unique_ptr<ColumnVectorBatch> oobBatch =
       oobReader->createRowBatch(5000);
@@ -806,9 +807,10 @@ TEST(Reader, seekToRow) {
     orc::ReaderOptions opts;
     std::ostringstream filename;
     filename << exampleDirectory << "/demo-11-none.orc";
-    std::unique_ptr<orc::Reader> reader =
+    std::unique_ptr<orc::Reader> filereader =
         orc::createReader(orc::readLocalFile(filename.str()), opts);
-    EXPECT_EQ(1920800, reader->getNumberOfRows());
+    std::unique_ptr<orc::RowReader> reader = filereader->getRowReader();
+    EXPECT_EQ(1920800, filereader->getNumberOfRows());
 
     std::unique_ptr<orc::ColumnVectorBatch> batch =
         reader->createRowBatch(5000); // Stripe size
@@ -842,9 +844,10 @@ TEST(Reader, seekToRow) {
     filename << exampleDirectory << "/demo-11-none.orc";
     opts.range(13126, 13145);   // Read only the second stripe (rows 5000..9999)
 
-    std::unique_ptr<orc::Reader> reader =
+    std::unique_ptr<orc::Reader> filereader =
         orc::createReader(orc::readLocalFile(filename.str()), opts);
-    EXPECT_EQ(1920800, reader->getNumberOfRows());
+    std::unique_ptr<orc::RowReader> reader = filereader->getRowReader();
+    EXPECT_EQ(1920800, filereader->getNumberOfRows());
 
     std::unique_ptr<orc::ColumnVectorBatch> batch =
         reader->createRowBatch(5000); // Stripe size
@@ -872,9 +875,10 @@ TEST(Reader, seekToRow) {
     orc::ReaderOptions opts;
     std::ostringstream filename;
     filename << exampleDirectory << "/TestOrcFile.emptyFile.orc";
-    std::unique_ptr<orc::Reader> reader =
+    std::unique_ptr<orc::Reader> filereader =
         orc::createReader(orc::readLocalFile(filename.str()), opts);
-    EXPECT_EQ(0, reader->getNumberOfRows());
+    std::unique_ptr<orc::RowReader> reader = filereader->getRowReader();
+    EXPECT_EQ(0, filereader->getNumberOfRows());
 
     std::unique_ptr<orc::ColumnVectorBatch> batch =
         reader->createRowBatch(5000);
@@ -913,8 +917,8 @@ TEST(Reader, selectColumns) {
     filename << exampleDirectory << "/TestOrcFile.testSeek.orc";
 
     // All columns
-    std::unique_ptr<orc::Reader> reader =
-        orc::createReader(orc::readLocalFile(filename.str()), opts);
+    std::unique_ptr<orc::RowReader> reader =
+        orc::createReader(orc::readLocalFile(filename.str()), opts)->getRowReader();
     std::vector<bool> c = reader->getSelectedColumns();
     EXPECT_EQ(24, c.size());
     for (unsigned int i=0; i < c.size(); i++) {
@@ -945,7 +949,7 @@ TEST(Reader, selectColumns) {
     std::list<uint64_t> cols;
     cols.push_back(1);
     opts.include(cols);
-    reader = orc::createReader(orc::readLocalFile(filename.str()), opts);
+    reader = orc::createReader(orc::readLocalFile(filename.str()), opts)->getRowReader();
     c = reader->getSelectedColumns();
     for (unsigned int i=1; i < c.size(); i++) {
       if (i==2)
@@ -967,7 +971,7 @@ TEST(Reader, selectColumns) {
     cols.clear();
     cols.push_back(9);
     opts.include(cols);
-    reader = orc::createReader(orc::readLocalFile(filename.str()), opts);
+    reader = orc::createReader(orc::readLocalFile(filename.str()), opts)->getRowReader();
     c = reader->getSelectedColumns();
     for (unsigned int i=1; i < c.size(); i++) {
       if (i>=10 && i<=14)
@@ -991,7 +995,7 @@ TEST(Reader, selectColumns) {
     cols.clear();
     cols.push_back(10);
     opts.include(cols);
-    reader = orc::createReader(orc::readLocalFile(filename.str()), opts);
+    reader = orc::createReader(orc::readLocalFile(filename.str()), opts)->getRowReader();
     c = reader->getSelectedColumns();
     for (unsigned int i=1; i < c.size(); i++) {
       if (i>=15 && i<=18)
@@ -1012,7 +1016,7 @@ TEST(Reader, selectColumns) {
     cols.clear();
     cols.push_back(11);
     opts.include(cols);
-    reader = orc::createReader(orc::readLocalFile(filename.str()), opts);
+    reader = orc::createReader(orc::readLocalFile(filename.str()), opts)->getRowReader();
     c = reader->getSelectedColumns();
     for (unsigned int i=1; i < c.size(); i++) {
       if (i>=19 && i<=23)
@@ -1037,7 +1041,7 @@ TEST(Reader, selectColumns) {
 TEST(Reader, memoryUse) {
   std::ostringstream filename;
   filename << exampleDirectory << "/TestOrcFile.testSeek.orc";
-  std::unique_ptr<orc::Reader> reader;
+  std::unique_ptr<orc::RowReader> reader;
   std::unique_ptr<orc::ColumnVectorBatch> batch;
   orc::ReaderOptions opts;
   std::list<uint64_t> cols;
@@ -1045,7 +1049,7 @@ TEST(Reader, memoryUse) {
   // Int column
   cols.push_back(1);
   opts.include(cols);
-  reader = orc::createReader(orc::readLocalFile(filename.str()), opts);
+  reader = orc::createReader(orc::readLocalFile(filename.str()), opts)->getRowReader();
   EXPECT_EQ(483517, reader->getMemoryUse());
   batch = reader->createRowBatch(1);
   EXPECT_EQ(10, batch->getMemoryUsage());
@@ -1057,7 +1061,7 @@ TEST(Reader, memoryUse) {
   cols.clear();
   cols.push_back(7);
   opts.include(cols);
-  reader = orc::createReader(orc::readLocalFile(filename.str()), opts);
+  reader = orc::createReader(orc::readLocalFile(filename.str()), opts)->getRowReader();
   EXPECT_EQ(835906, reader->getMemoryUse());
   batch = reader->createRowBatch(1);
   EXPECT_EQ(18, batch->getMemoryUsage());
@@ -1067,7 +1071,7 @@ TEST(Reader, memoryUse) {
   cols.clear();
   cols.push_back(8);
   opts.include(cols);
-  reader = orc::createReader(orc::readLocalFile(filename.str()), opts);
+  reader = orc::createReader(orc::readLocalFile(filename.str()), opts)->getRowReader();
   EXPECT_EQ(901442, reader->getMemoryUse());
   batch = reader->createRowBatch(1);
   EXPECT_EQ(18, batch->getMemoryUsage());
@@ -1077,7 +1081,7 @@ TEST(Reader, memoryUse) {
   cols.clear();
   cols.push_back(9);
   opts.include(cols);
-  reader = orc::createReader(orc::readLocalFile(filename.str()), opts);
+  reader = orc::createReader(orc::readLocalFile(filename.str()), opts)->getRowReader();
   EXPECT_EQ(1294658, reader->getMemoryUse());
   batch = reader->createRowBatch(1);
   EXPECT_EQ(46, batch->getMemoryUsage());
@@ -1087,7 +1091,7 @@ TEST(Reader, memoryUse) {
    cols.clear();
    cols.push_back(10);
    opts.include(cols);
-   reader = orc::createReader(orc::readLocalFile(filename.str()), opts);
+   reader = orc::createReader(orc::readLocalFile(filename.str()), opts)->getRowReader();
    EXPECT_EQ(1229122, reader->getMemoryUse());
    batch = reader->createRowBatch(1);
    EXPECT_EQ(45, batch->getMemoryUsage());
@@ -1097,7 +1101,7 @@ TEST(Reader, memoryUse) {
   cols.clear();
   cols.push_back(11);
   opts.include(cols);
-  reader = orc::createReader(orc::readLocalFile(filename.str()), opts);
+  reader = orc::createReader(orc::readLocalFile(filename.str()), opts)->getRowReader();
   EXPECT_EQ(1491266, reader->getMemoryUse());
   batch = reader->createRowBatch(1);
   EXPECT_EQ(62, batch->getMemoryUsage());
@@ -1109,7 +1113,7 @@ TEST(Reader, memoryUse) {
     cols.push_back(c);
   }
   opts.include(cols);
-  reader = orc::createReader(orc::readLocalFile(filename.str()), opts);
+  reader = orc::createReader(orc::readLocalFile(filename.str()), opts)->getRowReader();
   EXPECT_EQ(4112706, reader->getMemoryUse());
   batch = reader->createRowBatch(1);
   EXPECT_EQ(248, batch->getMemoryUsage());
