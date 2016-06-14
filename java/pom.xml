@@ -60,6 +60,7 @@
     <module>storage-api</module>
     <module>core</module>
     <module>mapreduce</module>
+    <module>bench</module>
   </modules>
 
   <properties>

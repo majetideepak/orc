@@ -905,10 +905,11 @@ public final class FileDump {
     }
   }
 
-  static void printRow(JSONWriter writer,
-                       VectorizedRowBatch batch,
-                       TypeDescription schema,
-                       int row) throws JSONException {
+  public static void printRow(java.io.Writer stream,
+                              VectorizedRowBatch batch,
+                              TypeDescription schema,
+                              int row) throws JSONException {
+    JSONWriter writer = new JSONWriter(stream);
     if (schema.getCategory() == TypeDescription.Category.STRUCT) {
       List<TypeDescription> fieldTypes = schema.getChildren();
       List<String> fieldNames = schema.getFieldNames();
@@ -932,8 +933,7 @@ public final class FileDump {
       VectorizedRowBatch batch = schema.createRowBatch();
       while (rows.nextBatch(batch)) {
         for(int r=0; r < batch.size; ++r) {
-          JSONWriter writer = new JSONWriter(out);
-          printRow(writer, batch, schema, r);
+          printRow(out, batch, schema, r);
           out.write("\n");
           out.flush();
           if (printStream.checkError()) {
