@@ -710,7 +710,7 @@ namespace orc {
   };
 
   /**
-   * The interface for reading footer in ORC files.
+   * The interface for reading ORC file meta-data.
    * This is an an abstract class that will subclassed as necessary.
    */
   class Reader {

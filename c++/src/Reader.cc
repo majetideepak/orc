@@ -1146,7 +1146,6 @@ namespace orc {
   };
 
   class ReaderImpl : public Reader {
-    friend class RowReaderImpl;
    private:
     // inputs
     std::shared_ptr<InputStream> stream;
@@ -1245,6 +1244,17 @@ namespace orc {
     bool hasCorrectStatistics() const override;
 
     std::string getSerializedFileTail() const override;
+
+    std::shared_ptr<proto::PostScript> getPostscript() const {return postscript;}
+
+    uint64_t getBlockSize() const {return blockSize;}
+
+    std::shared_ptr<proto::Footer> getFooter() const {return footer;}
+
+    std::shared_ptr<Type> getSchema() const {return schema;}
+
+    std::shared_ptr<InputStream> getStream() const {return stream;}
+
   };
 
   InputStream::~InputStream() {
@@ -1509,15 +1519,15 @@ namespace orc {
   RowReaderImpl::RowReaderImpl(const ReaderImpl* _filereader,
                             std::shared_ptr<ReaderOptions> opts
                          ): localTimezone(getLocalTimezone()),
-                            stream(_filereader->stream),
+                            stream(_filereader->getStream()),
                             options(opts),
                             memoryPool(*opts->getMemoryPool()),
-                            postscript(_filereader->postscript),
-                            blockSize(_filereader->blockSize),
-                            compression(_filereader->compression),
+                            postscript(_filereader->getPostscript()),
+                            blockSize(_filereader->getBlockSize()),
+                            compression(_filereader->getCompression()),
                             firstRowOfStripe(memoryPool, 0),
-                            footer(_filereader->footer),
-                            schema(_filereader->schema) {
+                            footer(_filereader->getFooter()),
+                            schema(_filereader->getSchema()) {
     uint64_t numberOfStripes;
     numberOfStripes = static_cast<uint64_t>(footer->stripes_size());
     currentStripe = numberOfStripes;
